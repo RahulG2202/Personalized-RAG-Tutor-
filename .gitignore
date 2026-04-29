@@ -1,0 +1,8 @@
+# OS and editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+*.tmp

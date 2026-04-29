@@ -1,0 +1,24 @@
+# Main Framework
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-core==0.3.29
+
+# AI Models (Google Gemini & Local Embeddings)
+langchain-google-genai==2.0.8
+langchain-huggingface==0.1.2
+langsmith==0.2.0
+sentence-transformers==3.3.1
+
+# Vector Database
+langchain-chroma==0.1.4
+
+# Utilities
+pypdf==5.1.0
+python-dotenv==1.0.1
+pymupdf==1.24.2
+
+# Web Backend
+fastapi==0.115.2
+uvicorn==0.32.0
+python-multipart==0.0.12
+pydantic-settings==2.6.0
