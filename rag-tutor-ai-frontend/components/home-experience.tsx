@@ -15,6 +15,7 @@ export default function HomeExperience() {
   const [status, setStatus] = useState("Tutor ready");
   const [tone, setTone] = useState<StatusTone>("idle");
   const [isTraining, setIsTraining] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -71,8 +72,9 @@ export default function HomeExperience() {
     }
   }
 
-  function handleMaterialChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  async function handleMaterialChange(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.target;
+    const file = input.files?.[0];
 
     if (!file) {
       setSelectedFile("No file selected");
@@ -80,8 +82,51 @@ export default function HomeExperience() {
     }
 
     setSelectedFile(file.name);
-    setTone("success");
-    setStatus("Material selected");
+
+    const isPdf =
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+    if (!isPdf) {
+      setTone("error");
+      setStatus("Choose a PDF");
+      input.value = "";
+      return;
+    }
+
+    setIsUploading(true);
+    setTone("working");
+    setStatus("Uploading material");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/ingest/upload-pdf`, {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        filename?: string;
+        s3_key?: string;
+        s3_uri?: string;
+      };
+
+      setSelectedFile(data.filename ?? file.name);
+      setTone("success");
+      setStatus(data.s3_key ? `Uploaded: ${data.s3_key}` : "Uploaded to S3");
+    } catch (error) {
+      console.error(error);
+      setTone("error");
+      setStatus("Upload failed");
+    } finally {
+      setIsUploading(false);
+      input.value = "";
+    }
   }
 
   const statusClass = {
@@ -163,13 +208,14 @@ export default function HomeExperience() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="min-h-40 border-2 border-ink bg-aqua p-5 text-left text-ink transition-transform hover:-translate-y-1"
+                disabled={isUploading}
+                className="min-h-40 border-2 border-ink bg-aqua p-5 text-left text-ink transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="block text-sm font-black uppercase tracking-normal">
                   Action 02
                 </span>
                 <span className="mt-8 block text-3xl font-black uppercase leading-none">
-                  Upload Material
+                  {isUploading ? "Uploading" : "Upload Material"}
                 </span>
               </button>
 
@@ -179,6 +225,7 @@ export default function HomeExperience() {
                 accept=".pdf,application/pdf"
                 className="sr-only"
                 onChange={handleMaterialChange}
+                disabled={isUploading}
               />
             </div>
 

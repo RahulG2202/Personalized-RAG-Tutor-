@@ -36,4 +36,7 @@ def get_rag_chat():
     )
 
     question_answer_chain = create_stuff_documents_chain(llm, prompt)
-    return create_retrieval_chain(vector_db.db.as_retriever(search_kwargs={"k": chat_settings.RETRIVAL_K}), question_answer_chain)
+    retriever = vector_db.get_db().as_retriever(
+        search_kwargs={"k": chat_settings.RETRIVAL_K}
+    )
+    return create_retrieval_chain(retriever, question_answer_chain)
