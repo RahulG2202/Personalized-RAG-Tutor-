@@ -1,33 +1,46 @@
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, BackgroundTasks
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from app.services.ingest import ingest_service
 from app.services.s3_storage import s3_storage_service
-from langchain_community.document_loaders import PyPDFLoader
-from io import BytesIO
 import fitz
+from typing import List
 router = APIRouter()
 
+def process_pdf_pipeline(file, filename):
+    print("Inside PDF background pipeline")
 
-@router.get("/upload-pdf")
-async def upload_pdf_help():
-    return {
-        "status": "Ready",
-        "message": "Send a POST multipart/form-data request with a PDF field named 'file'.",
-        "field_name": "file"
-    }
+    try:
+        doc = fitz.open(stream=file, filetype="pdf")
+        
+        for page in doc:
+            page.clean_contents()
+
+        from io import BytesIO
+        compressed_buffer = BytesIO()
+        doc.save(compressed_buffer, deflate=True, garbage=4, clean=True)
+        compressed_pdf = compressed_buffer.getvalue()
+        doc.close()
+
+        print("Ready to upload to S3")
+
+        pdf_file = BytesIO(compressed_pdf)
+        uploaded = s3_storage_service.upload_pdf(pdf_file, filename or "material.pdf")
+        print(f"Successfully uploaded {filename} to S3")
+    except Exception as e:
+        print(f"Faild to upload to S3: {str(e)}")
+
+
 
 def verify_pdf(file_data):
     try:
         doc = fitz.open(stream=file_data, filetype="pdf")
         
-        # Check if PDF has pages
         if doc.page_count == 0:
             print("No pages found in PDF")
             doc.close()
-            return False, None
+            return False
         
-        # Check if at least one page has content
         has_content = False
         for page_num in range(min(doc.page_count, 10)):
             page = doc[page_num]
@@ -40,64 +53,94 @@ def verify_pdf(file_data):
         if not has_content:
             print("No text content found in first 10 pages")
             doc.close()
-            return False, None
+            return False
         
-        # Compress the PDF
-        compressed_pdf = doc.tobytes(deflate=True, garbage=1, linear=False)
-        doc.close()
-        
-        print("PDF verified and compressed successfully")
-        return True, compressed_pdf
+        return True
         
     except Exception as e:
         print(f"Uploaded PDF cannot be scanned: {str(e)}")
-        return False, None
+        return False
 
 
-@router.post("/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)):
-    try:
-        # Read the file data
-        file_data = await file.read()
-        
-        # Verify PDF and compress it
-        is_valid, compressed_data = await run_in_threadpool(verify_pdf, file_data)
-        if not is_valid:
-            raise HTTPException(
-                status_code=400,
-                detail="PDF file is not readable or contains no text content"
-            )
-        
-        del file_data
-        
-        # Create a BytesIO object with compressed data
-        compressed_file = BytesIO(compressed_data)
+@router.post("/upload-multiple-pdf")
+async def upload_multiple_pdfs(background_tasks: BackgroundTasks, files: List[UploadFile] = File(None)):
+    # Validate files were provided
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided. Send files in 'files' field")
+    
+    uploaded_pdf = []
+    failed_files = []
 
-        print(f"PDF Verified and Compressed {compressed_file}")
+    if len(files) > 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 files allowed at once")
+    
+    for file in files:
+        filename = file.filename
+        try:
+            if not filename.endswith('.pdf'):
+                failed_files.append({
+                    "filename": filename,
+                    "status": "This file format is not supported"
+                })
+                continue
+            
+            # Read the file data
+            file_data = await file.read()
         
-        uploaded = await run_in_threadpool(
-            s3_storage_service.upload_pdf,
-            compressed_file,
-            file.filename or "material.pdf"
-        )
-        return JSONResponse(
-            status_code=201,
-            content={
-                "status": "Success",
-                "message": "PDF uploaded to S3.",
-                "filename": uploaded.filename,
-                "size": uploaded.size,
-            }
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"S3 upload failed: {e}")
-    finally:
-        await file.close()
+            # Verify PDF
+            is_valid = await run_in_threadpool(verify_pdf, file_data)
+            if not is_valid:
+                failed_files.append({
+                    "filename": filename,
+                    "status": "This PDF cannot be scanned"
+                })
+                continue
+            
+            background_tasks.add_task(process_pdf_pipeline, file_data, filename)
+            uploaded_pdf.append({
+                "filename": filename,
+                "status": "Accepted for processing"
+            })
 
+            del file_data
+        except ValueError as e:
+            failed_files.append({
+                "filename": filename,
+                "error": str(e)
+            })
+        except RuntimeError as e:
+            failed_files.append({
+                "filename": filename,
+                "error": str(e)
+            })
+        except Exception as e:
+            failed_files.append({
+                "filename": filename,
+                "error": f"S3 upload failed: {e}"
+            })
+        finally:
+            await file.close()
+
+    if not uploaded_pdf and failed_files:
+        raise HTTPException(status_code=400, detail={
+            "message": "No PDFS were uploaded",
+            "failed_files": failed_files
+        })
+    
+    status_code = 207 if failed_files else 201
+    status = "Partial Success" if failed_files else "Success"
+
+    return JSONResponse(
+        status_code= status_code,
+        content={
+            "status": status,
+            "message": f"Uploaded {len(uploaded_pdf)} PDF file(s) to S3.",
+            "files_uploaded": uploaded_pdf,
+            "files_failed": failed_files,
+            "uploaded_count": len(uploaded_pdf),
+            "failed_count": len(failed_files)
+        }
+    )
 
 @router.get("/s3-pdfs")
 async def list_s3_pdfs():

@@ -24,7 +24,7 @@ export default function HomeExperience() {
         opacity: 0,
         duration: 0.8,
         ease: "power3.out",
-        stagger: 0.08
+        stagger: 0.08,
       });
 
       gsap.to("[data-animate='float']", {
@@ -33,7 +33,7 @@ export default function HomeExperience() {
         ease: "sine.inOut",
         repeat: -1,
         yoyo: true,
-        stagger: 0.2
+        stagger: 0.2,
       });
     }, rootRef);
 
@@ -48,7 +48,7 @@ export default function HomeExperience() {
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/v1/ingest/run-ingestion?reset_db=false`,
-        { method: "POST" }
+        { method: "POST" },
       );
 
       if (!response.ok) {
@@ -63,7 +63,9 @@ export default function HomeExperience() {
       const fileCount = data.files_processed?.length ?? 0;
       const pageCount = data.total_pages_extracted ?? 0;
       setTone("success");
-      setStatus(`Trained ${fileCount} file${fileCount === 1 ? "" : "s"} - ${pageCount} pages`);
+      setStatus(
+        `Trained ${fileCount} file${fileCount === 1 ? "" : "s"} - ${pageCount} pages`,
+      );
     } catch {
       setTone("error");
       setStatus("Training failed");
@@ -74,51 +76,83 @@ export default function HomeExperience() {
 
   async function handleMaterialChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
-    const file = input.files?.[0];
+    const files = Array.from(input.files ?? []);
 
-    if (!file) {
+    if (files.length === 0) {
       setSelectedFile("No file selected");
       return;
     }
 
-    setSelectedFile(file.name);
+    const selectedLabel =
+      files.length === 1 ? files[0].name : `${files.length} files selected`;
+    setSelectedFile(selectedLabel);
 
-    const isPdf =
-      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const invalidFile = files.find(
+      (file) =>
+        file.type !== "application/pdf" &&
+        !file.name.toLowerCase().endsWith(".pdf"),
+    );
 
-    if (!isPdf) {
+    if (invalidFile) {
       setTone("error");
-      setStatus("Choose a PDF");
+      setStatus("Choose PDFs only");
       input.value = "";
       return;
     }
 
     setIsUploading(true);
     setTone("working");
-    setStatus("Uploading material");
+    setStatus(
+      files.length === 1 ? "Uploading material" : "Uploading materials",
+    );
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/ingest/upload-pdf`, {
-        method: "POST",
-        body: formData
+      files.forEach((file) => {
+        formData.append("files", file);
       });
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/ingest/upload-multiple-pdf`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`Upload failed with status ${response.status}`);
       }
 
       const data = (await response.json()) as {
-        filename?: string;
-        s3_key?: string;
-        s3_uri?: string;
+        files_uploaded?: {
+          filename?: string;
+          s3_key?: string;
+          s3_uri?: string;
+        }[];
+        files_failed?: { filename?: string; error?: string }[];
+        uploaded_count?: number;
+        failed_count?: number;
       };
 
-      setSelectedFile(data.filename ?? file.name);
+      const uploadedCount =
+        data.uploaded_count ?? data.files_uploaded?.length ?? 0;
+      const failedCount = data.failed_count ?? data.files_failed?.length ?? 0;
+
+      if (uploadedCount === 1 && data.files_uploaded?.[0]?.filename) {
+        setSelectedFile(data.files_uploaded[0].filename);
+      } else {
+        setSelectedFile(
+          `${uploadedCount} uploaded${failedCount ? `, ${failedCount} failed` : ""}`,
+        );
+      }
+
       setTone("success");
-      setStatus(data.s3_key ? `Uploaded: ${data.s3_key}` : "Uploaded to S3");
+      setStatus(
+        failedCount
+          ? `Uploaded ${uploadedCount}, failed ${failedCount}`
+          : `Uploaded ${uploadedCount} file${uploadedCount === 1 ? "" : "s"}`,
+      );
     } catch (error) {
       console.error(error);
       setTone("error");
@@ -133,16 +167,21 @@ export default function HomeExperience() {
     idle: "bg-chalk text-ink",
     working: "bg-lemon text-ink",
     success: "bg-aqua text-ink",
-    error: "bg-tomato text-chalk"
+    error: "bg-tomato text-chalk",
   }[tone];
 
   return (
-    <main ref={rootRef} className="min-h-screen overflow-hidden px-5 py-5 sm:px-8 lg:px-10">
+    <main
+      ref={rootRef}
+      className="min-h-screen overflow-hidden px-5 py-5 sm:px-8 lg:px-10"
+    >
       <header
         data-animate="rise"
         className="flex items-center justify-between border-b-2 border-ink pb-4"
       >
-        <p className="text-sm font-black uppercase tracking-normal">RAG Tutor AI</p>
+        <p className="text-sm font-black uppercase tracking-normal">
+          RAG Tutor AI
+        </p>
         <p className="hidden text-sm font-bold uppercase tracking-normal sm:block">
           Learn from your own library
         </p>
@@ -163,14 +202,14 @@ export default function HomeExperience() {
           >
             RAG
             <span className="block text-tomato">Tutor</span>
-            <span className="block">AI</span>
           </h1>
 
           <p
             data-animate="rise"
             className="mt-7 max-w-xl text-lg font-semibold leading-8 text-graphite sm:text-xl"
           >
-            Train a focused AI tutor on your PDFs, then ask questions that stay grounded in your material.
+            Train a focused AI tutor on your PDFs, then ask questions that stay
+            grounded in your material.
           </p>
         </div>
 
@@ -185,7 +224,9 @@ export default function HomeExperience() {
                   {selectedFile}
                 </p>
               </div>
-              <span className={`border-2 border-ink px-3 py-2 text-xs font-black uppercase ${statusClass}`}>
+              <span
+                className={`border-2 border-ink px-3 py-2 text-xs font-black uppercase ${statusClass}`}
+              >
                 {status}
               </span>
             </div>
@@ -223,6 +264,7 @@ export default function HomeExperience() {
                 ref={fileInputRef}
                 type="file"
                 accept=".pdf,application/pdf"
+                multiple
                 className="sr-only"
                 onChange={handleMaterialChange}
                 disabled={isUploading}

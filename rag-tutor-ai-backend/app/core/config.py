@@ -17,6 +17,7 @@ class GlobalSettings(BaseSettings):
         "CORS_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:3000"
     )
+    PINECONE_API_KEY: str = env_value("PINECONE_API_KEY")
 
     @property
     def cors_origins(self):
@@ -29,8 +30,7 @@ class GlobalSettings(BaseSettings):
 
 class IngestionSettings(BaseSettings):
     DATA_DIR: str = "data"
-    TEMP_DIR: str = "temp_compressed"
-    DB_PATH: str = "./chroma_db"
+    PINECONE_INDEX_NAME: str = env_value("PINECONE_INDEX_NAME")
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 100

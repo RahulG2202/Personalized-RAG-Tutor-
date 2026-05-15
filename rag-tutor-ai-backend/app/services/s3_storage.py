@@ -136,5 +136,10 @@ class S3StorageService:
     def download_pdf(self, key: str, destination_path: str):
         self.client.download_file(self._bucket(), key, destination_path)
 
+    def download_pdf_bytes(self, key: str) -> bytes:
+        """Download PDF from S3 and return as bytes (in-memory)."""
+        response = self.client.get_object(Bucket=self._bucket(), Key=key)
+        return response['Body'].read()
+
 
 s3_storage_service = S3StorageService()

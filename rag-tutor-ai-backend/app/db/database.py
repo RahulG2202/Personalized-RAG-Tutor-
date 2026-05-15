@@ -1,6 +1,7 @@
 from langchain_chroma import Chroma
+from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
-from app.core.config import ingestion_settings
+from app.core.config import ingestion_settings, global_settings
 
 
 class VectorDatabase:
@@ -16,9 +17,10 @@ class VectorDatabase:
 
     def get_db(self):
         if self.db is None:
-            self.db = Chroma(
-                persist_directory=ingestion_settings.DB_PATH,
-                embedding_function=self.get_embeddings()
+            self.db = PineconeVectorStore(
+                index_name=ingestion_settings.PINECONE_INDEX_NAME,
+                embedding=self.get_embeddings(),
+                pinecone_api_key=global_settings.PINECONE_API_KEY
             )
         return self.db
 
@@ -26,27 +28,30 @@ class VectorDatabase:
         self.db = Chroma.from_documents(
             documents=chunks,
             embedding=self.get_embeddings(),
-            persist_directory=ingestion_settings.DB_PATH
+            index_name=ingestion_settings.PINECONE_INDEX_NAME,
+            pinecone_api_key=global_settings.PINECONE_API_KEY
         )
 
-    def get_existing_files(self):
-        data = self.get_db().get()
-        if not data or not data['metadatas']:
-            return set()
-        return {m['source_file'] for m in data['metadatas'] if 'source_file' in m}
+    def check_file_exists(self, filename: str) -> bool:
+        """
+        Pinecone check: Unlike Chroma, we can't 'get all'. 
+        We search for 1 chunk with this filename.
+        """
+        db = self.get_db()
+        # Search for the filename in metadata
+        results = db.similarity_search(
+            "verification query", 
+            k=1, 
+            filter={"source_file": filename}
+        )
+        return len(results) > 0
 
     def add_documents(self, chunks):
         self.get_db().add_documents(documents=chunks)
 
     def reset_db(self):
-        import shutil
-        import os
-        if os.path.exists(ingestion_settings.DB_PATH):
-            shutil.rmtree(ingestion_settings.DB_PATH)
-        self.db = Chroma(
-            persist_directory=ingestion_settings.DB_PATH,
-            embedding_function=self.get_embeddings()
-        )
+        print("⚠️ Wiping Pinecone Index...")
+        self.get_db().delete(delete_all=True)
 
 
 vector_db = VectorDatabase()
