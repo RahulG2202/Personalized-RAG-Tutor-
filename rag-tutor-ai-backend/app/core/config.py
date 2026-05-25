@@ -15,7 +15,7 @@ class GlobalSettings(BaseSettings):
     GOOGLE_API_KEY: str = env_value("GOOGLE_API_KEY")
     CORS_ORIGINS: str = env_value(
         "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000"
+        "http://localhost:3000,http://127.0.0.1:3000,https://personalized-rag-tutor.vercel.app"
     )
     PINECONE_API_KEY: str = env_value("PINECONE_API_KEY")
 
