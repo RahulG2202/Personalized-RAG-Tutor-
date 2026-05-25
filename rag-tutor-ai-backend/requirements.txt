@@ -23,5 +23,6 @@ pinecone-client==5.0.1
 # Web Backend
 fastapi==0.115.2
 uvicorn==0.32.0
+gunicorn==23.0.0
 python-multipart==0.0.12
 pydantic-settings==2.6.0

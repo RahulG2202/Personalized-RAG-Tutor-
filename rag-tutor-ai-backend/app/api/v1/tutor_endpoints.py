@@ -8,7 +8,6 @@ router = APIRouter()
 @router.post("/ask", response_model=ChatResponse)
 async def ask_tutor(request: ChatRequest):
     try:
-        answer = tutor_service.ask_question(request)
-        return ChatResponse(answer=answer)
+        return ChatResponse(**tutor_service.ask_question(request))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,3 +1,5 @@
+from pathlib import PurePosixPath
+
 from app.core.engine import get_rag_chat
 from app.schemas.chat import ChatRequest
 
@@ -13,7 +15,23 @@ class TutorService:
 
     def ask_question(self, request: ChatRequest):
         response = self.get_rag_chain().invoke({"input": request.message})
-        return response["answer"]
+        sources = []
+
+        for document in response.get("context", []):
+            metadata = getattr(document, "metadata", {}) or {}
+            source = (
+                metadata.get("source_name")
+                or metadata.get("source_file")
+                or metadata.get("source")
+            )
+
+            if source:
+                sources.append(PurePosixPath(str(source)).name)
+
+        return {
+            "answer": response["answer"],
+            "sources": list(dict.fromkeys(sources)),
+        }
 
 
 tutor_service = TutorService()

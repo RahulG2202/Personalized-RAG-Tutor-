@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import gsap from "gsap";
 
 const API_BASE_URL =
@@ -9,13 +10,16 @@ const API_BASE_URL =
 type StatusTone = "idle" | "working" | "success" | "error";
 
 export default function HomeExperience() {
+  const router = useRouter();
   const rootRef = useRef<HTMLElement>(null);
+  const chatButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<string>("No file selected");
-  const [status, setStatus] = useState("Tutor ready");
+  const [status, setStatus] = useState("");
   const [tone, setTone] = useState<StatusTone>("idle");
   const [isTraining, setIsTraining] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isOpeningChat, setIsOpeningChat] = useState(false);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -39,6 +43,37 @@ export default function HomeExperience() {
 
     return () => ctx.revert();
   }, []);
+
+  function handleOpenChat() {
+    if (isOpeningChat) {
+      return;
+    }
+
+    setIsOpeningChat(true);
+
+    if (!rootRef.current || !chatButtonRef.current) {
+      router.push("/chat");
+      return;
+    }
+
+    gsap
+      .timeline({
+        onComplete: () => router.push("/chat"),
+      })
+      .to(chatButtonRef.current, {
+        scale: 1.08,
+        y: -8,
+        duration: 0.18,
+        ease: "back.out(2)",
+      })
+      .to(rootRef.current, {
+        scale: 0.985,
+        opacity: 0,
+        y: -18,
+        duration: 0.36,
+        ease: "power2.inOut",
+      });
+  }
 
   async function handleTrainTutor() {
     setIsTraining(true);
@@ -220,32 +255,31 @@ export default function HomeExperience() {
                 <h2 className="text-3xl font-black uppercase leading-none sm:text-5xl">
                   Tutor Studio
                 </h2>
-                <p className="mt-3 text-sm font-bold uppercase tracking-normal text-graphite">
-                  {selectedFile}
-                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-bold uppercase tracking-normal text-graphite">
+                    {selectedFile}
+                  </p>
+                  {status ? (
+                    <span
+                      className={`border-2 border-ink px-2 py-1 text-[0.65rem] font-black uppercase ${statusClass}`}
+                    >
+                      {status}
+                    </span>
+                  ) : null}
+                </div>
               </div>
-              <span
-                className={`border-2 border-ink px-3 py-2 text-xs font-black uppercase ${statusClass}`}
+              <button
+                ref={chatButtonRef}
+                type="button"
+                onClick={handleOpenChat}
+                disabled={isOpeningChat}
+                className="whitespace-nowrap border-2 border-ink bg-chalk px-3 py-2 text-xs font-black uppercase text-ink shadow-[4px_4px_0_#171717] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70 motion-safe:animate-bounce"
               >
-                {status}
-              </span>
+                {isOpeningChat ? "Opening Chat" : "Chat with Tutor"}
+              </button>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={handleTrainTutor}
-                disabled={isTraining}
-                className="min-h-40 border-2 border-ink bg-ink p-5 text-left text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                <span className="block text-sm font-black uppercase tracking-normal">
-                  Action 01
-                </span>
-                <span className="mt-8 block text-3xl font-black uppercase leading-none">
-                  {isTraining ? "Training" : "Train Tutor"}
-                </span>
-              </button>
-
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -257,6 +291,20 @@ export default function HomeExperience() {
                 </span>
                 <span className="mt-8 block text-3xl font-black uppercase leading-none">
                   {isUploading ? "Uploading" : "Upload Material"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTrainTutor}
+                disabled={isTraining}
+                className="min-h-40 border-2 border-ink bg-ink p-5 text-left text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <span className="block text-sm font-black uppercase tracking-normal">
+                  Action 01
+                </span>
+                <span className="mt-8 block text-3xl font-black uppercase leading-none">
+                  {isTraining ? "Training" : "Train Tutor"}
                 </span>
               </button>
 
