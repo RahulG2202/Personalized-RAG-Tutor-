@@ -15,6 +15,7 @@ Set these in your Render service dashboard under **Environment**:
 - `GOOGLE_API_KEY` - Google Generative AI API key
 - `PINECONE_API_KEY` - Pinecone vector database API key
 - `PINECONE_INDEX_NAME` - Your Pinecone index name
+- `EMBEDDING_MODEL` - Embedding model name. Defaults to `models/text-embedding-004`
 - `AWS_ACCESS_KEY_ID` - AWS access key for S3
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key for S3
 - `AWS_S3_BUCKET` - S3 bucket name for PDF storage
@@ -24,6 +25,8 @@ Set these in your Render service dashboard under **Environment**:
 - `CORS_ORIGINS` - Frontend URLs (comma-separated)
 - `AWS_REGION` - AWS region (default: us-east-1)
 - `AWS_S3_PREFIX` - S3 prefix (default: materials)
+
+The default Google embedding model returns 768-dimensional vectors, so create or recreate the Pinecone index with dimension `768` before ingestion.
 
 ## Deployment Steps
 

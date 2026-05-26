@@ -1,11 +1,21 @@
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, BackgroundTasks
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
+from app.db.database import vector_db
 from app.services.ingest import ingest_service
 from app.services.s3_storage import s3_storage_service
 import fitz
 from typing import List
 router = APIRouter()
+
+
+def warm_vector_database():
+    try:
+        vector_db.warm_up()
+        print("Vector database warm-up complete")
+    except Exception as e:
+        print(f"Vector database warm-up failed: {str(e)}")
+
 
 def process_pdf_pipeline(file, filename):
     print("Inside PDF background pipeline")
@@ -161,6 +171,63 @@ async def list_s3_pdfs():
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"S3 list failed: {e}")
+
+
+@router.post("/warmup")
+async def warmup_vector_db(background_tasks: BackgroundTasks):
+    background_tasks.add_task(warm_vector_database)
+    return {
+        "status": "Accepted",
+        "message": "Vector database warm-up started"
+    }
+
+
+@router.delete("/materials")
+async def delete_materials():
+    try:
+        pdfs = await run_in_threadpool(s3_storage_service.list_pdfs)
+        source_files = [pdf.key for pdf in pdfs]
+
+        deleted_vector_sources = await run_in_threadpool(
+            vector_db.delete_documents_by_source_files,
+            source_files
+        )
+        s3_result = await run_in_threadpool(
+            s3_storage_service.delete_pdfs,
+            source_files
+        )
+
+        failed_files = s3_result["errors"]
+        status_code = 207 if failed_files else 200
+        status = "Partial Success" if failed_files else "Success"
+
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": status,
+                "message": (
+                    f"Deleted {len(s3_result['deleted'])} PDF file(s) from S3 "
+                    "and cleared matching Pinecone vectors."
+                ),
+                "files_deleted": [
+                    {
+                        "filename": pdf.filename,
+                        "s3_key": pdf.key
+                    }
+                    for pdf in pdfs
+                    if pdf.key in s3_result["deleted"]
+                ],
+                "files_failed": failed_files,
+                "deleted_count": len(s3_result["deleted"]),
+                "failed_count": len(failed_files),
+                "vector_sources_deleted": deleted_vector_sources,
+                "vector_sources_deleted_count": len(deleted_vector_sources)
+            }
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
 
 @router.post("/run-ingestion")

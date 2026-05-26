@@ -133,6 +133,56 @@ class S3StorageService:
 
         return pdfs
 
+    def delete_pdfs(self, keys: list[str]):
+        prefix = self._prefix()
+        unique_keys = list(dict.fromkeys(
+            key
+            for key in keys
+            if (
+                key
+                and key.lower().endswith(".pdf")
+                and (not prefix or key.startswith(prefix))
+            )
+        ))
+
+        if not unique_keys:
+            return {
+                "deleted": [],
+                "errors": []
+            }
+
+        bucket = self._bucket()
+        deleted = []
+        errors = []
+
+        for index in range(0, len(unique_keys), 1000):
+            batch = unique_keys[index:index + 1000]
+            response = self.client.delete_objects(
+                Bucket=bucket,
+                Delete={
+                    "Objects": [{"Key": key} for key in batch],
+                    "Quiet": False
+                }
+            )
+
+            deleted.extend(
+                item.get("Key")
+                for item in response.get("Deleted", [])
+                if item.get("Key")
+            )
+            errors.extend(
+                {
+                    "key": item.get("Key"),
+                    "message": item.get("Message") or item.get("Code") or "Delete failed"
+                }
+                for item in response.get("Errors", [])
+            )
+
+        return {
+            "deleted": deleted,
+            "errors": errors
+        }
+
     def download_pdf(self, key: str, destination_path: str):
         self.client.download_file(self._bucket(), key, destination_path)
 

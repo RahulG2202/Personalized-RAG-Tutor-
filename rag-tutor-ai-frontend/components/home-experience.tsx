@@ -14,11 +14,14 @@ export default function HomeExperience() {
   const rootRef = useRef<HTMLElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<string>("No file selected");
+  const [selectedFile, setSelectedFile] = useState<string>(
+    "Upload Files to start training",
+  );
   const [status, setStatus] = useState("");
   const [tone, setTone] = useState<StatusTone>("idle");
   const [isTraining, setIsTraining] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isOpeningChat, setIsOpeningChat] = useState(false);
 
   useEffect(() => {
@@ -45,7 +48,7 @@ export default function HomeExperience() {
   }, []);
 
   function handleOpenChat() {
-    if (isOpeningChat) {
+    if (isOpeningChat || isDeleting) {
       return;
     }
 
@@ -198,6 +201,57 @@ export default function HomeExperience() {
     }
   }
 
+  async function handleDeleteMaterials() {
+    if (isDeleting || isUploading || isTraining) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete all uploaded PDFs and embedded tutor data?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setTone("working");
+    setStatus("Deleting materials");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/ingest/materials`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Delete failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        deleted_count?: number;
+        failed_count?: number;
+        vector_sources_deleted_count?: number;
+      };
+
+      const deletedCount = data.deleted_count ?? 0;
+      const failedCount = data.failed_count ?? 0;
+
+      setSelectedFile("No file selected");
+      setTone(failedCount ? "error" : "success");
+      setStatus(
+        failedCount
+          ? `Deleted ${deletedCount}, failed ${failedCount}`
+          : `Deleted ${deletedCount} file${deletedCount === 1 ? "" : "s"}`,
+      );
+    } catch (error) {
+      console.error(error);
+      setTone("error");
+      setStatus("Delete failed");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   const statusClass = {
     idle: "bg-chalk text-ink",
     working: "bg-lemon text-ink",
@@ -272,7 +326,7 @@ export default function HomeExperience() {
                 ref={chatButtonRef}
                 type="button"
                 onClick={handleOpenChat}
-                disabled={isOpeningChat}
+                disabled={isOpeningChat || isDeleting}
                 className="whitespace-nowrap border-2 border-ink bg-chalk px-3 py-2 text-xs font-black uppercase text-ink shadow-[4px_4px_0_#171717] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70 motion-safe:animate-bounce"
               >
                 {isOpeningChat ? "Opening Chat" : "Chat with Tutor"}
@@ -283,7 +337,7 @@ export default function HomeExperience() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
+                disabled={isUploading || isDeleting}
                 className="min-h-40 border-2 border-ink bg-aqua p-5 text-left text-ink transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="block text-sm font-black uppercase tracking-normal">
@@ -297,7 +351,7 @@ export default function HomeExperience() {
               <button
                 type="button"
                 onClick={handleTrainTutor}
-                disabled={isTraining}
+                disabled={isTraining || isDeleting}
                 className="min-h-40 border-2 border-ink bg-ink p-5 text-left text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="block text-sm font-black uppercase tracking-normal">
@@ -315,7 +369,7 @@ export default function HomeExperience() {
                 multiple
                 className="sr-only"
                 onChange={handleMaterialChange}
-                disabled={isUploading}
+                disabled={isUploading || isDeleting}
               />
             </div>
 
@@ -341,6 +395,15 @@ export default function HomeExperience() {
                 </div>
               ))}
             </div>
+
+            <button
+              type="button"
+              onClick={handleDeleteMaterials}
+              disabled={isDeleting || isUploading || isTraining}
+              className="mt-4 min-h-14 w-full border-2 border-ink bg-tomato px-5 py-3 text-left text-sm font-black uppercase tracking-normal text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70 sm:text-base"
+            >
+              {isDeleting ? "Deleting Materials" : "Delete Materials"}
+            </button>
           </section>
         </div>
       </section>

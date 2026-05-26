@@ -31,7 +31,7 @@ class GlobalSettings(BaseSettings):
 class IngestionSettings(BaseSettings):
     DATA_DIR: str = "data"
     PINECONE_INDEX_NAME: str = env_value("PINECONE_INDEX_NAME")
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL: str = env_value("EMBEDDING_MODEL", "models/text-embedding-004")
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 100
 
