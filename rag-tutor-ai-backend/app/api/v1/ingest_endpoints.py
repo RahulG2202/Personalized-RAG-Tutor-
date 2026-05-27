@@ -10,11 +10,9 @@ router = APIRouter()
 
 
 def warm_vector_database():
-    try:
-        vector_db.warm_up()
-        print("Vector database warm-up complete")
-    except Exception as e:
-        print(f"Vector database warm-up failed: {str(e)}")
+    stats = vector_db.warm_up()
+    print("Vector database warm-up complete")
+    return stats
 
 
 def process_pdf_pipeline(file, filename):
@@ -174,12 +172,21 @@ async def list_s3_pdfs():
 
 
 @router.post("/warmup")
-async def warmup_vector_db(background_tasks: BackgroundTasks):
-    background_tasks.add_task(warm_vector_database)
-    return {
-        "status": "Accepted",
-        "message": "Vector database warm-up started"
-    }
+async def warmup_vector_db():
+    try:
+        stats = await run_in_threadpool(warm_vector_database)
+        return {
+            "status": "Success",
+            "message": "Vector database is ready",
+            **stats
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Vector database warm-up failed: {e}"
+        )
 
 
 @router.delete("/materials")

@@ -9,20 +9,24 @@ const API_BASE_URL =
 
 type StatusTone = "idle" | "working" | "success" | "error";
 
+type VectorDbWarmupResponse = {
+  has_embeddings?: boolean;
+  total_vector_count?: number;
+};
+
 export default function HomeExperience() {
   const router = useRouter();
   const rootRef = useRef<HTMLElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<string>(
-    "Upload Files to start training",
-  );
+  const [selectedFile, setSelectedFile] = useState<string>("");
   const [status, setStatus] = useState("");
   const [tone, setTone] = useState<StatusTone>("idle");
   const [isTraining, setIsTraining] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isOpeningChat, setIsOpeningChat] = useState(false);
+  const [hasEmbeddedData, setHasEmbeddedData] = useState(false);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -46,6 +50,64 @@ export default function HomeExperience() {
 
     return () => ctx.revert();
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function verifyEmbeddedData() {
+      try {
+        const hasEmbeddings = await fetchEmbeddingStatus();
+
+        if (isMounted) {
+          setHasEmbeddedData(hasEmbeddings);
+        }
+      } catch (error) {
+        console.warn("Unable to verify vector database status", error);
+
+        if (isMounted) {
+          setHasEmbeddedData(false);
+        }
+      }
+    }
+
+    verifyEmbeddedData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  async function fetchEmbeddingStatus() {
+    const response = await fetch(`${API_BASE_URL}/api/v1/ingest/warmup`, {
+      method: "POST",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Vector status check failed with status ${response.status}`,
+      );
+    }
+
+    const data = (await response.json()) as VectorDbWarmupResponse;
+    return Boolean(data.has_embeddings);
+  }
+
+  async function refreshEmbeddedData(fallback = false) {
+    try {
+      setHasEmbeddedData(await fetchEmbeddingStatus());
+    } catch (error) {
+      console.warn("Unable to refresh vector database status", error);
+      setHasEmbeddedData(fallback);
+    }
+  }
+
+  function handlePrimaryTutorAction() {
+    if (hasEmbeddedData) {
+      handleOpenChat();
+      return;
+    }
+  }
 
   function handleOpenChat() {
     if (isOpeningChat || isDeleting) {
@@ -104,6 +166,12 @@ export default function HomeExperience() {
       setStatus(
         `Trained ${fileCount} file${fileCount === 1 ? "" : "s"} - ${pageCount} pages`,
       );
+
+      if (fileCount > 0 || pageCount > 0) {
+        setHasEmbeddedData(true);
+      } else {
+        void refreshEmbeddedData(false);
+      }
     } catch {
       setTone("error");
       setStatus("Training failed");
@@ -202,7 +270,7 @@ export default function HomeExperience() {
   }
 
   async function handleDeleteMaterials() {
-    if (isDeleting || isUploading || isTraining) {
+    if (!hasEmbeddedData || isDeleting || isUploading || isTraining) {
       return;
     }
 
@@ -243,6 +311,7 @@ export default function HomeExperience() {
           ? `Deleted ${deletedCount}, failed ${failedCount}`
           : `Deleted ${deletedCount} file${deletedCount === 1 ? "" : "s"}`,
       );
+      void refreshEmbeddedData(false);
     } catch (error) {
       console.error(error);
       setTone("error");
@@ -258,6 +327,11 @@ export default function HomeExperience() {
     success: "bg-aqua text-ink",
     error: "bg-tomato text-chalk",
   }[tone];
+
+  const primaryTutorActionText = hasEmbeddedData
+    ? "Chat with tutor"
+    : "Train the model";
+  const materialLabel = isTraining ? "Training ..." : selectedFile;
 
   return (
     <main
@@ -311,7 +385,15 @@ export default function HomeExperience() {
                 </h2>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <p className="text-sm font-bold uppercase tracking-normal text-graphite">
-                    {selectedFile}
+                    <span
+                      className={
+                        isTraining
+                          ? "inline-block text-ink motion-safe:animate-pulse"
+                          : undefined
+                      }
+                    >
+                      {materialLabel}
+                    </span>
                   </p>
                   {status ? (
                     <span
@@ -325,11 +407,15 @@ export default function HomeExperience() {
               <button
                 ref={chatButtonRef}
                 type="button"
-                onClick={handleOpenChat}
-                disabled={isOpeningChat || isDeleting}
+                onClick={handlePrimaryTutorAction}
+                disabled={isOpeningChat || isDeleting || isTraining}
                 className="whitespace-nowrap border-2 border-ink bg-chalk px-3 py-2 text-xs font-black uppercase text-ink shadow-[4px_4px_0_#171717] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70 motion-safe:animate-bounce"
               >
-                {isOpeningChat ? "Opening Chat" : "Chat with Tutor"}
+                {isOpeningChat
+                  ? "Opening Chat"
+                  : isTraining
+                    ? "Training"
+                    : primaryTutorActionText}
               </button>
             </div>
 
@@ -341,7 +427,7 @@ export default function HomeExperience() {
                 className="min-h-40 border-2 border-ink bg-aqua p-5 text-left text-ink transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="block text-sm font-black uppercase tracking-normal">
-                  Action 02
+                  Action 01
                 </span>
                 <span className="mt-8 block text-3xl font-black uppercase leading-none">
                   {isUploading ? "Uploading" : "Upload Material"}
@@ -351,11 +437,11 @@ export default function HomeExperience() {
               <button
                 type="button"
                 onClick={handleTrainTutor}
-                disabled={isTraining || isDeleting}
+                disabled={selectedFile.length === 0 || isTraining || isDeleting}
                 className="min-h-40 border-2 border-ink bg-ink p-5 text-left text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="block text-sm font-black uppercase tracking-normal">
-                  Action 01
+                  Action 02
                 </span>
                 <span className="mt-8 block text-3xl font-black uppercase leading-none">
                   {isTraining ? "Training" : "Train Tutor"}
@@ -399,7 +485,9 @@ export default function HomeExperience() {
             <button
               type="button"
               onClick={handleDeleteMaterials}
-              disabled={isDeleting || isUploading || isTraining}
+              disabled={
+                !hasEmbeddedData || isDeleting || isUploading || isTraining
+              }
               className="mt-4 min-h-14 w-full border-2 border-ink bg-tomato px-5 py-3 text-left text-sm font-black uppercase tracking-normal text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70 sm:text-base"
             >
               {isDeleting ? "Deleting Materials" : "Delete Materials"}

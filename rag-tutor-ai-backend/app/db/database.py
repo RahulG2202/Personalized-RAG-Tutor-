@@ -36,10 +36,41 @@ class VectorDatabase:
         db = self.get_db()
         index = getattr(db, "_index", None)
 
-        if index is not None:
-            index.describe_index_stats()
+        if index is None:
+            return {
+                "total_vector_count": 0,
+                "has_embeddings": False
+            }
 
-        return True
+        stats = index.describe_index_stats()
+        total_vector_count = self._extract_total_vector_count(stats)
+
+        return {
+            "total_vector_count": total_vector_count,
+            "has_embeddings": total_vector_count > 0
+        }
+
+    def _extract_total_vector_count(self, stats):
+        if isinstance(stats, dict):
+            return self._extract_total_vector_count_from_dict(stats)
+
+        to_dict = getattr(stats, "to_dict", None)
+        if callable(to_dict):
+            return self._extract_total_vector_count_from_dict(to_dict())
+
+        return int(getattr(stats, "total_vector_count", 0) or 0)
+
+    def _extract_total_vector_count_from_dict(self, stats):
+        total = stats.get("total_vector_count")
+
+        if total is not None:
+            return int(total or 0)
+
+        namespaces = stats.get("namespaces") or {}
+        return sum(
+            int(namespace_stats.get("vector_count", 0) or 0)
+            for namespace_stats in namespaces.values()
+        )
 
     def check_file_exists(self, filename: str) -> bool:
         """
