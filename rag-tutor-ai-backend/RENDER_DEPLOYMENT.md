@@ -13,9 +13,11 @@ Set these in your Render service dashboard under **Environment**:
 ### Critical Variables
 
 - `GOOGLE_API_KEY` - Google Generative AI API key
+- `HUGGINGFACEHUB_API_TOKEN` - Hugging Face fine-grained user access token for hosted embeddings. Enable the `Make calls to Inference Providers` permission.
 - `PINECONE_API_KEY` - Pinecone vector database API key
 - `PINECONE_INDEX_NAME` - Your Pinecone index name
-- `EMBEDDING_MODEL` - Embedding model name. Defaults to `models/text-embedding-004`
+- `EMBEDDING_MODEL` - Embedding model name. Defaults to `ibm-granite/granite-embedding-97m-multilingual-r2`
+- `EMBEDDING_DIMENSIONS` - Embedding output dimensions. Defaults to `384`
 - `AWS_ACCESS_KEY_ID` - AWS access key for S3
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key for S3
 - `AWS_S3_BUCKET` - S3 bucket name for PDF storage
@@ -25,8 +27,10 @@ Set these in your Render service dashboard under **Environment**:
 - `CORS_ORIGINS` - Frontend URLs (comma-separated)
 - `AWS_REGION` - AWS region (default: us-east-1)
 - `AWS_S3_PREFIX` - S3 prefix (default: materials)
+- `HUGGINGFACE_EMBEDDING_API_URL` - Hugging Face router URL (default: `https://router.huggingface.co/hf-inference`)
 
-The default Google embedding model returns 768-dimensional vectors, so create or recreate the Pinecone index with dimension `768` before ingestion.
+The default embedding configuration returns 384-dimensional vectors, so create or recreate the Pinecone index with dimension `384` before ingestion.
+If Render returns HTTP 403 from Hugging Face with "does not have sufficient permissions to call Inference Providers", replace `HUGGINGFACEHUB_API_TOKEN` with a new fine-grained token that has the `Make calls to Inference Providers` permission, then redeploy/restart the service.
 
 ## Deployment Steps
 

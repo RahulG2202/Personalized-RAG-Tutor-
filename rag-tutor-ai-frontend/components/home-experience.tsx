@@ -437,7 +437,7 @@ export default function HomeExperience() {
               <button
                 type="button"
                 onClick={handleTrainTutor}
-                disabled={selectedFile.length === 0 || isTraining || isDeleting}
+                disabled={isTraining || isDeleting}
                 className="min-h-40 border-2 border-ink bg-ink p-5 text-left text-chalk transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="block text-sm font-black uppercase tracking-normal">

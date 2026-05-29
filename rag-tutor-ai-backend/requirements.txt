@@ -3,7 +3,7 @@ langchain==0.3.14
 langchain-community==0.3.14
 langchain-core==0.3.29
 
-# AI Models (Google Gemini & Cloud Embeddings)
+# AI Models (Google Gemini & Hugging Face API Embeddings)
 langchain-google-genai==2.0.8
 langsmith==0.2.0
 
@@ -16,6 +16,7 @@ pypdf==5.1.0
 python-dotenv==1.0.1
 pymupdf==1.24.2
 pinecone-client==5.0.1
+requests==2.32.5
 
 # Web Backend
 fastapi==0.115.2
