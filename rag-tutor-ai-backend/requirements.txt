@@ -2,6 +2,7 @@
 langchain==0.3.14
 langchain-community==0.3.14
 langchain-core==0.3.29
+langchain-experimental==0.3.4
 
 # AI Models (Google Gemini & Hugging Face API Embeddings)
 langchain-google-genai==2.0.8

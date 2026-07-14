@@ -149,7 +149,6 @@ class VectorDatabase:
                         raise RuntimeError(
                             "HUGGINGFACEHUB_API_TOKEN is not configured."
                         )
-                    print(f"HUGGINGFACEHUB_API_TOKEN {global_settings.HUGGINGFACEHUB_API_TOKEN}")
 
                     self.embeddings = HuggingFaceRouterEmbeddings(
                         api_key=global_settings.HUGGINGFACEHUB_API_TOKEN,

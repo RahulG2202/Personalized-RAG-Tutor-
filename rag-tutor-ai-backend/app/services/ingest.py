@@ -1,25 +1,79 @@
-import re
-from io import BytesIO
-
-import fitz
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import fitz
 from langchain.schema import Document
-from pypdf import PdfReader
-from app.core.config import ingestion_settings
+from langchain_experimental.text_splitter import SemanticChunker
+
 from app.db.database import vector_db
 from app.services.s3_storage import s3_storage_service
 
 
 class IngestService:
+    SEMANTIC_BREAKPOINT_PERCENTILE = 70
+    PREVIEW_CHUNK_COUNT = 10
+
     def clean_text(self, text):
         text = re.sub(r'\n+', ' ', text)
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'Page \d+ of \d+', '', text)
 
         return text.strip()
+
+    def semantic_chunk_pages(self, page_documents):
+        splitter = SemanticChunker(
+            embeddings=vector_db.get_embeddings(),
+            breakpoint_threshold_type="percentile",
+            breakpoint_threshold_amount=self.SEMANTIC_BREAKPOINT_PERCENTILE
+        )
+        chunks = []
+
+        for page_document in page_documents:
+            page_chunks = splitter.split_documents([page_document])
+            chunk_count = len(page_chunks)
+
+            for index, chunk in enumerate(page_chunks):
+                chunk.metadata = dict(chunk.metadata or {})
+                chunk.metadata.update({
+                    "chunking_strategy": "langchain_page_semantic",
+                    "page_chunk_index": index,
+                    "page_chunk_count": chunk_count
+                })
+
+            chunks.extend(page_chunks)
+
+        return chunks
+
+    def print_top_chunks(self, chunks):
+        if not chunks:
+            print("No semantic chunks generated.")
+            return
+
+        print(f"Top {min(self.PREVIEW_CHUNK_COUNT, len(chunks))} semantic chunks:")
+
+        for index, chunk in enumerate(chunks[:self.PREVIEW_CHUNK_COUNT], start=1):
+            metadata = chunk.metadata or {}
+            source_name = (
+                metadata.get("source_name")
+                or metadata.get("source_file")
+                or "unknown"
+            )
+            page = metadata.get("page")
+            page_label = page + 1 if isinstance(page, int) else page
+            preview = self.clean_text(chunk.page_content)
+
+            if len(preview) > 500:
+                preview = f"{preview[:500]}..."
+
+            print(
+                f"{index}. source={source_name} "
+                f"page={page_label} "
+                f"chunk={metadata.get('page_chunk_index', 0) + 1}/"
+                f"{metadata.get('page_chunk_count', 1)} "
+                f"chars={len(chunk.page_content)}"
+            )
+            print(preview)
 
     async def run_ingestion(self, reset_db: bool = False):
         if reset_db:
@@ -51,7 +105,7 @@ class IngestService:
 
                     if len(cleaned_text) > 0:
                         pages.append(Document(
-                            page_content = cleaned_text,
+                            page_content=cleaned_text,
                             metadata={
                                 'source_file': pdf.key,
                                 'source_name': pdf.filename,
@@ -65,7 +119,7 @@ class IngestService:
                 return pdf.filename, []
             
         if pdfs_to_process:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             with ThreadPoolExecutor(max_workers=5) as executor:
                 tasks = [
                     loop.run_in_executor(executor, process_single_pdf, pdf)
@@ -79,11 +133,8 @@ class IngestService:
                     processed_files.append(filename)
 
         if all_pages:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=ingestion_settings.CHUNK_SIZE,
-                chunk_overlap=ingestion_settings.CHUNK_OVERLAP
-            )
-            chunks = splitter.split_documents(all_pages)
+            chunks = self.semantic_chunk_pages(all_pages)
+            self.print_top_chunks(chunks)
 
             batch_size = 100
             print(f"Uploading {len(chunks)} chunks in batches of {batch_size}...")
@@ -94,54 +145,6 @@ class IngestService:
                 print(f"Uploaded batch {i // batch_size + 1}...")
 
         return processed_files, len(all_pages)
-            
-
-        # for pdf in pdf_objects:
-        #     print(f"Processing PDF: {pdf.key}")
-            
-        #     if vector_db.check_file_exists(pdf.key):
-        #         print(f"PDF already in vector DB: {pdf.filename}")
-        #         continue
-
-        #     try:
-        #         # Stream PDF directly from S3 into memory
-        #         pdf_bytes = s3_storage_service.download_pdf_bytes(pdf.key)
-        #         pdf_file = BytesIO(pdf_bytes)
-                
-        #         # Extract pages using pypdf
-        #         reader = PdfReader(pdf_file)
-        #         pages = []
-                
-        #         for page_num, page in enumerate(reader.pages):
-        #             text = page.extract_text()
-        #             cleaned_text = self.clean_text(text)
-                    
-        #             doc = Document(
-        #                 page_content=cleaned_text,
-        #                 metadata={
-        #                     'source_file': pdf.key,
-        #                     'source_name': pdf.filename,
-        #                     'page': page_num
-        #                 }
-        #             )
-        #             pages.append(doc)
-
-        #         all_pages.extend(pages)
-        #         processed_files.append(pdf.filename)
-        #         print(f"Successfully loaded {len(pages)} pages from {pdf.filename}")
-        #     except Exception as e:
-        #         print(f"Error processing {pdf.filename}: {str(e)}")
-
-        # if all_pages:
-        #     splitter = RecursiveCharacterTextSplitter(
-        #         chunk_size=ingestion_settings.CHUNK_SIZE,
-        #         chunk_overlap=ingestion_settings.CHUNK_OVERLAP
-        #     )
-        #     chunks = splitter.split_documents(all_pages)
-        #     vector_db.add_documents(chunks)
-        #     print(f"Added {len(chunks)} chunks to vector database")
-
-        # return processed_files, len(all_pages)
 
 
 ingest_service = IngestService()

@@ -70,7 +70,7 @@ def verify_pdf(file_data):
         return False
 
 
-@router.post("/upload-multiple-pdf")
+@router.post("/upload-multiple-pdf", status_code=202)
 async def upload_multiple_pdfs(background_tasks: BackgroundTasks, files: List[UploadFile] = File(None)):
     # Validate files were provided
     if not files:
