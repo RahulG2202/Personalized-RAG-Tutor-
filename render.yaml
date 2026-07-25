@@ -26,6 +26,8 @@ services:
         value: 384
       - key: HUGGINGFACE_EMBEDDING_API_URL
         value: https://router.huggingface.co/hf-inference
+      - key: HYBRID_ALPHA
+        value: 0.5
       - key: AWS_ACCESS_KEY_ID
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
