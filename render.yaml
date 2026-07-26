@@ -1,4 +1,12 @@
 services:
+  - type: keyvalue
+    name: rag-tutor-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: noeviction
+    persistenceMode: journal-snapshot
+    ipAllowList: []
+
   - type: web
     name: rag-tutor-backend
     runtime: python
@@ -40,3 +48,8 @@ services:
         value: materials
       - key: CORS_ORIGINS
         value: http://localhost:3000,https://personalized-rag-tutor.vercel.app
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: rag-tutor-redis
+          property: connectionString
