@@ -29,3 +29,4 @@ pydantic-settings==2.6.0
 
 # Redis / Queue Broker
 redis==5.2.1
+celery[redis]==5.6.2
