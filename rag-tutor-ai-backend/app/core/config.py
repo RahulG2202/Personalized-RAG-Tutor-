@@ -71,17 +71,21 @@ class S3Settings(BaseSettings):
     AWS_S3_BUCKET: str = env_value("AWS_S3_BUCKET")
     AWS_S3_PREFIX: str = env_value("AWS_S3_PREFIX", "materials")
 
+
 class RedisSettings(BaseSettings):
     REDIS_URL: str = env_value("REDIS_URL", "redis://localhost:6379/0")
-    REDIS_SOCKET_CONNECT_TIMEOUT: int = env_int("REDIS_SOCKET_CONNECT_TIMEOUT", 5)
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = env_int(
+        "REDIS_SOCKET_CONNECT_TIMEOUT", 5)
     REDIS_SOCKET_TIMEOUT: int = env_int("REDIS_SOCKET_TIMEOUT", 5)
-    REDIS_HEALTH_CHECK_INTERVAL: int = env_int("REDIS_HEALTH_CHECK_INTERVAL", 30)
+    REDIS_HEALTH_CHECK_INTERVAL: int = env_int(
+        "REDIS_HEALTH_CHECK_INTERVAL", 30)
+
 
 class CelerySettings(BaseSettings):
-    CELERY_BROKER_URL: str = env_value("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND: str = env_value("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
-
-
+    CELERY_BROKER_URL: str = env_value(
+        "CELERY_BROKER_URL", env_value("REDIS_URL", "redis://localhost:6379/0"))
+    CELERY_RESULT_BACKEND: str = env_value(
+        "CELERY_RESULT_BACKEND", env_value("REDIS_URL", "redis://localhost:6379/0"))
 
 
 global_settings = GlobalSettings()
