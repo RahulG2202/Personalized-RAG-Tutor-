@@ -186,10 +186,10 @@ class IngestService:
             chunks = self.semantic_chunk_pages(all_pages)
             self.print_top_chunks(chunks)
 
-            # batch_size = 100
-            # print(f"Uploading {len(chunks)} chunks in batches of {batch_size}...")
+            batch_size = 100
+            print(f"Uploading {len(chunks)} chunks in batches of {batch_size}...")
 
-            # vector_db.add_documents(chunks, batch_size=batch_size)
+            vector_db.add_documents(chunks, batch_size=batch_size)
 
         return processed_files, len(all_pages)
 

@@ -53,3 +53,13 @@ services:
           type: keyvalue
           name: rag-tutor-redis
           property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: rag-tutor-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: keyvalue
+          name: rag-tutor-redis
+          property: connectionString
