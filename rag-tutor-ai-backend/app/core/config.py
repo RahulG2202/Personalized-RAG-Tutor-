@@ -15,6 +15,11 @@ def env_int(name, default):
     return int(value) if value else default
 
 
+def env_float(name, default):
+    value = env_value(name, str(default))
+    return float(value) if value else default
+
+
 class GlobalSettings(BaseSettings):
     PROJECT_NAME: str = "Personalized RAG Tutor"
     GOOGLE_API_KEY: str = env_value("GOOGLE_API_KEY")
@@ -54,6 +59,7 @@ class IngestionSettings(BaseSettings):
 class ChatSettings(BaseSettings):
     LLM_MODEL: str = "gemini-2.5-flash"
     RETRIVAL_K: int = 3
+    HYBRID_ALPHA: float = env_float("HYBRID_ALPHA", 0.5)
     TEMPERATURE: float = 0.7
 
 
@@ -65,8 +71,22 @@ class S3Settings(BaseSettings):
     AWS_S3_BUCKET: str = env_value("AWS_S3_BUCKET")
     AWS_S3_PREFIX: str = env_value("AWS_S3_PREFIX", "materials")
 
+class RedisSettings(BaseSettings):
+    REDIS_URL: str = env_value("REDIS_URL", "redis://localhost:6379/0")
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = env_int("REDIS_SOCKET_CONNECT_TIMEOUT", 5)
+    REDIS_SOCKET_TIMEOUT: int = env_int("REDIS_SOCKET_TIMEOUT", 5)
+    REDIS_HEALTH_CHECK_INTERVAL: int = env_int("REDIS_HEALTH_CHECK_INTERVAL", 30)
+
+class CelerySettings(BaseSettings):
+    CELERY_BROKER_URL: str = env_value("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = env_value("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
+
+
 
 global_settings = GlobalSettings()
 ingestion_settings = IngestionSettings()
 chat_settings = ChatSettings()
 s3_settings = S3Settings()
+redis_settings = RedisSettings()
+celery_settings = CelerySettings()

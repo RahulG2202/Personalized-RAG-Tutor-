@@ -4,15 +4,16 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import { useCeleryTask } from "@/hooks/use-celery-task";
+import {
+  API_BASE_URL,
+  fetchEmbeddingStatus,
+  fetchIngestionTaskStatus,
+  IngestionTaskResult,
+  startIngestion,
+} from "@/lib/api/ingestion";
 
 type StatusTone = "idle" | "working" | "success" | "error";
-
-type VectorDbWarmupResponse = {
-  has_embeddings?: boolean;
-  total_vector_count?: number;
-};
 
 export default function HomeExperience() {
   const router = useRouter();
@@ -22,11 +23,37 @@ export default function HomeExperience() {
   const [selectedFile, setSelectedFile] = useState<string>("");
   const [status, setStatus] = useState("");
   const [tone, setTone] = useState<StatusTone>("idle");
-  const [isTraining, setIsTraining] = useState(false);
+  const [isSubmittingTraining, setIsSubmittingTraining] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isOpeningChat, setIsOpeningChat] = useState(false);
   const [hasEmbeddedData, setHasEmbeddedData] = useState(false);
+  const ingestionTask = useCeleryTask<IngestionTaskResult>({
+    fetchStatus: fetchIngestionTaskStatus,
+    queuedMessage: "Training queued",
+    runningMessage: "Training tutor",
+    onSuccess: (taskStatus) => {
+      const fileCount = taskStatus.result?.files_processed?.length ?? 0;
+      const pageCount = taskStatus.result?.total_pages_extracted ?? 0;
+
+      setTone("success");
+      setStatus(
+        `Trained ${fileCount} file${fileCount === 1 ? "" : "s"} - ${pageCount} pages`,
+      );
+
+      if (fileCount > 0 || pageCount > 0) {
+        setHasEmbeddedData(true);
+      } else {
+        void refreshEmbeddedData(false);
+      }
+    },
+    onFailure: (taskError) => {
+      console.error(taskError);
+      setTone("error");
+      setStatus("Training failed");
+    },
+  });
+  const isTraining = isSubmittingTraining || ingestionTask.isActive;
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -77,21 +104,12 @@ export default function HomeExperience() {
     };
   }, []);
 
-  async function fetchEmbeddingStatus() {
-    const response = await fetch(`${API_BASE_URL}/api/v1/ingest/warmup`, {
-      method: "POST",
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Vector status check failed with status ${response.status}`,
-      );
+  useEffect(() => {
+    if (ingestionTask.isActive && ingestionTask.message) {
+      setTone("working");
+      setStatus(ingestionTask.message);
     }
-
-    const data = (await response.json()) as VectorDbWarmupResponse;
-    return Boolean(data.has_embeddings);
-  }
+  }, [ingestionTask.isActive, ingestionTask.message]);
 
   async function refreshEmbeddedData(fallback = false) {
     try {
@@ -141,42 +159,26 @@ export default function HomeExperience() {
   }
 
   async function handleTrainTutor() {
-    setIsTraining(true);
+    if (isTraining || isDeleting) {
+      return;
+    }
+
+    setIsSubmittingTraining(true);
     setTone("working");
-    setStatus("Training tutor");
+    setStatus("Training queued");
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/ingest/run-ingestion?reset_db=false`,
-        { method: "POST" },
+      const queuedTask = await startIngestion(false);
+      ingestionTask.startPolling(
+        queuedTask.task_id,
+        queuedTask.message ?? "Training queued",
       );
-
-      if (!response.ok) {
-        throw new Error(`Training failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as {
-        files_processed?: string[];
-        total_pages_extracted?: number;
-      };
-
-      const fileCount = data.files_processed?.length ?? 0;
-      const pageCount = data.total_pages_extracted ?? 0;
-      setTone("success");
-      setStatus(
-        `Trained ${fileCount} file${fileCount === 1 ? "" : "s"} - ${pageCount} pages`,
-      );
-
-      if (fileCount > 0 || pageCount > 0) {
-        setHasEmbeddedData(true);
-      } else {
-        void refreshEmbeddedData(false);
-      }
-    } catch {
+    } catch (error) {
+      console.error(error);
       setTone("error");
       setStatus("Training failed");
     } finally {
-      setIsTraining(false);
+      setIsSubmittingTraining(false);
     }
   }
 

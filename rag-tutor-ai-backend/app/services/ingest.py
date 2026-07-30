@@ -1,19 +1,21 @@
-import re
-from io import BytesIO
-
-import fitz
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import fitz
 from langchain.schema import Document
-from pypdf import PdfReader
-from app.core.config import ingestion_settings
+from langchain_experimental.text_splitter import SemanticChunker
+
 from app.db.database import vector_db
 from app.services.s3_storage import s3_storage_service
 
 
 class IngestService:
+    SEMANTIC_BREAKPOINT_PERCENTILE = 70
+    SEMANTIC_PAGE_BATCH_SIZE = 10
+    SHORT_PAGE_CHAR_THRESHOLD = 600
+    PREVIEW_CHUNK_COUNT = 10
+
     def clean_text(self, text):
         text = re.sub(r'\n+', ' ', text)
         text = re.sub(r'\s+', ' ', text)
@@ -21,12 +23,111 @@ class IngestService:
 
         return text.strip()
 
+    def semantic_chunk_pages(self, page_documents):
+        print(f"Starting semantic chunking for {len(page_documents)} pages...")
+        splitter = SemanticChunker(
+            embeddings=vector_db.get_embeddings(),
+            breakpoint_threshold_type="percentile",
+            breakpoint_threshold_amount=self.SEMANTIC_BREAKPOINT_PERCENTILE,
+            min_chunk_size=450,
+        )
+        print("Semantic chunking complete. Generating chunks...")
+        chunks = []
+
+        for start in range(0, len(page_documents), self.SEMANTIC_PAGE_BATCH_SIZE):
+            page_batch = page_documents[start:start + self.SEMANTIC_PAGE_BATCH_SIZE]
+            semantic_page_documents = [
+                page_document
+                for page_document in page_batch
+                if len(page_document.page_content) >= self.SHORT_PAGE_CHAR_THRESHOLD
+            ]
+            page_chunks_by_key = {
+                self.page_chunk_key(page_document.metadata): [
+                    self.short_page_chunk(page_document)
+                ]
+                for page_document in page_batch
+                if len(page_document.page_content) < self.SHORT_PAGE_CHAR_THRESHOLD
+            }
+
+            if semantic_page_documents:
+                page_chunks = splitter.split_documents(semantic_page_documents)
+
+                for chunk in page_chunks:
+                    chunk.metadata = dict(chunk.metadata or {})
+                    chunk.metadata["chunking_strategy"] = "langchain_page_semantic"
+                    page_key = self.page_chunk_key(chunk.metadata)
+                    page_chunks_by_key.setdefault(page_key, []).append(chunk)
+
+            for page_document in page_batch:
+                page_key = self.page_chunk_key(page_document.metadata)
+                page_chunks = page_chunks_by_key.get(page_key, [])
+                page_chunk_count = len(page_chunks)
+
+                for index, chunk in enumerate(page_chunks):
+                    chunk.metadata = dict(chunk.metadata or {})
+                    chunk.metadata.update({
+                        "page_chunk_index": index,
+                        "page_chunk_count": page_chunk_count
+                    })
+
+                chunks.extend(page_chunks)
+        print(f"Generated {len(chunks)} semantic chunks from {len(page_documents)} pages.")
+
+        return chunks
+
+    def short_page_chunk(self, page_document):
+        metadata = dict(page_document.metadata or {})
+        metadata["chunking_strategy"] = "short_page_skip"
+
+        return Document(
+            page_content=page_document.page_content,
+            metadata=metadata
+        )
+
+    def page_chunk_key(self, metadata):
+        return (
+            metadata.get("source_file"),
+            metadata.get("source_name"),
+            metadata.get("page")
+        )
+
+    def print_top_chunks(self, chunks):
+        if not chunks:
+            print("No semantic chunks generated.")
+            return
+
+        print(f"Top {min(self.PREVIEW_CHUNK_COUNT, len(chunks))} semantic chunks:")
+
+        for index, chunk in enumerate(chunks[:self.PREVIEW_CHUNK_COUNT], start=1):
+            metadata = chunk.metadata or {}
+            source_name = (
+                metadata.get("source_name")
+                or metadata.get("source_file")
+                or "unknown"
+            )
+            page = metadata.get("page")
+            page_label = page + 1 if isinstance(page, int) else page
+            preview = self.clean_text(chunk.page_content)
+
+            if len(preview) > 500:
+                preview = f"{preview[:500]}..."
+
+            print(
+                f"{index}. source={source_name} "
+                f"page={page_label} "
+                f"chunk={metadata.get('page_chunk_index', 0) + 1}/"
+                f"{metadata.get('page_chunk_count', 1)} "
+                f"chars={len(chunk.page_content)}"
+            )
+            print(preview)
+
     async def run_ingestion(self, reset_db: bool = False):
         if reset_db:
             vector_db.reset_db()
 
         all_pages = []
         processed_files = []
+        print("Starting ingestion process...")
 
         pdf_objects = s3_storage_service.list_pdfs()
         print(f"Found {len(pdf_objects)} PDFs in S3: {[pdf.filename for pdf in pdf_objects]}")
@@ -51,7 +152,7 @@ class IngestService:
 
                     if len(cleaned_text) > 0:
                         pages.append(Document(
-                            page_content = cleaned_text,
+                            page_content=cleaned_text,
                             metadata={
                                 'source_file': pdf.key,
                                 'source_name': pdf.filename,
@@ -65,83 +166,32 @@ class IngestService:
                 return pdf.filename, []
             
         if pdfs_to_process:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             with ThreadPoolExecutor(max_workers=5) as executor:
                 tasks = [
                     loop.run_in_executor(executor, process_single_pdf, pdf)
                     for pdf in pdfs_to_process
                 ]
+                print(f"Processing {len(tasks)} PDFs concurrently...")
                 results = await asyncio.gather(*tasks)
-
+                print("PDF processing complete.")
             for filename, pages in results:
                 if pages:
                     all_pages.extend(pages)
                     processed_files.append(filename)
+                print(f"Processed PDF: {filename}")
 
         if all_pages:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=ingestion_settings.CHUNK_SIZE,
-                chunk_overlap=ingestion_settings.CHUNK_OVERLAP
-            )
-            chunks = splitter.split_documents(all_pages)
+            print(f"Total pages to be chunked: {len(all_pages)}")
+            chunks = self.semantic_chunk_pages(all_pages)
+            self.print_top_chunks(chunks)
 
             batch_size = 100
             print(f"Uploading {len(chunks)} chunks in batches of {batch_size}...")
 
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i : i + batch_size]
-                vector_db.add_documents(batch)
-                print(f"Uploaded batch {i // batch_size + 1}...")
+            vector_db.add_documents(chunks, batch_size=batch_size)
 
         return processed_files, len(all_pages)
-            
-
-        # for pdf in pdf_objects:
-        #     print(f"Processing PDF: {pdf.key}")
-            
-        #     if vector_db.check_file_exists(pdf.key):
-        #         print(f"PDF already in vector DB: {pdf.filename}")
-        #         continue
-
-        #     try:
-        #         # Stream PDF directly from S3 into memory
-        #         pdf_bytes = s3_storage_service.download_pdf_bytes(pdf.key)
-        #         pdf_file = BytesIO(pdf_bytes)
-                
-        #         # Extract pages using pypdf
-        #         reader = PdfReader(pdf_file)
-        #         pages = []
-                
-        #         for page_num, page in enumerate(reader.pages):
-        #             text = page.extract_text()
-        #             cleaned_text = self.clean_text(text)
-                    
-        #             doc = Document(
-        #                 page_content=cleaned_text,
-        #                 metadata={
-        #                     'source_file': pdf.key,
-        #                     'source_name': pdf.filename,
-        #                     'page': page_num
-        #                 }
-        #             )
-        #             pages.append(doc)
-
-        #         all_pages.extend(pages)
-        #         processed_files.append(pdf.filename)
-        #         print(f"Successfully loaded {len(pages)} pages from {pdf.filename}")
-        #     except Exception as e:
-        #         print(f"Error processing {pdf.filename}: {str(e)}")
-
-        # if all_pages:
-        #     splitter = RecursiveCharacterTextSplitter(
-        #         chunk_size=ingestion_settings.CHUNK_SIZE,
-        #         chunk_overlap=ingestion_settings.CHUNK_OVERLAP
-        #     )
-        #     chunks = splitter.split_documents(all_pages)
-        #     vector_db.add_documents(chunks)
-        #     print(f"Added {len(chunks)} chunks to vector database")
-
-        # return processed_files, len(all_pages)
 
 
 ingest_service = IngestService()

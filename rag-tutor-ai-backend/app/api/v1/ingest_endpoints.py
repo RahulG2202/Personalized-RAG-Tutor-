@@ -1,13 +1,17 @@
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, BackgroundTasks
+import fitz
+from typing import List
+from celery.result import AsyncResult
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, BackgroundTasks
+
 from app.db.database import vector_db
 from app.services.ingest import ingest_service
 from app.services.s3_storage import s3_storage_service
-import fitz
-from typing import List
-router = APIRouter()
+from app.core.celery_app import celery_app
+from app.tasks.ingestion_tasks import run_ingestion_task
 
+router = APIRouter()
 
 def warm_vector_database():
     stats = vector_db.warm_up()
@@ -70,7 +74,7 @@ def verify_pdf(file_data):
         return False
 
 
-@router.post("/upload-multiple-pdf")
+@router.post("/upload-multiple-pdf", status_code=202)
 async def upload_multiple_pdfs(background_tasks: BackgroundTasks, files: List[UploadFile] = File(None)):
     # Validate files were provided
     if not files:
@@ -236,17 +240,30 @@ async def delete_materials():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
-
 @router.post("/run-ingestion")
 async def run_ingestion(reset_db: bool = Query(False)):
-    try:
-        files, page_count = await ingest_service.run_ingestion(reset_db=reset_db)
-        return {
-            "status": "Success",
-            "files_processed": files,
-            "total_pages_extracted": page_count
-        }
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
+    task = run_ingestion_task.delay(reset_db)
+
+    return {
+        "status": "queued",
+        "task_id": task.id,
+        "message": "Ingestion task queued."
+    }
+
+@router.get("/ingestion-tasks/{task_id}")
+async def get_ingestion_task_status(task_id: str):
+    task = AsyncResult(task_id, app=celery_app)
+
+    response = {
+        "task_id": task_id,
+        "state": task.state,
+    }
+
+    if task.state == "SUCCESS":
+        response["result"] = task.result
+    elif task.state == "FAILURE":
+        response["error"] = str(task.info)
+    elif task.info:
+        response["meta"] = task.info
+
+    return response

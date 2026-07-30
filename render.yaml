@@ -1,4 +1,12 @@
 services:
+  - type: keyvalue
+    name: rag-tutor-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: noeviction
+    persistenceMode: journal-snapshot
+    ipAllowList: []
+
   - type: web
     name: rag-tutor-backend
     runtime: python
@@ -26,6 +34,8 @@ services:
         value: 384
       - key: HUGGINGFACE_EMBEDDING_API_URL
         value: https://router.huggingface.co/hf-inference
+      - key: HYBRID_ALPHA
+        value: 0.5
       - key: AWS_ACCESS_KEY_ID
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
@@ -38,3 +48,18 @@ services:
         value: materials
       - key: CORS_ORIGINS
         value: http://localhost:3000,https://personalized-rag-tutor.vercel.app
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: rag-tutor-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: rag-tutor-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: keyvalue
+          name: rag-tutor-redis
+          property: connectionString

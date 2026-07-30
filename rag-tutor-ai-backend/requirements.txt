@@ -2,12 +2,14 @@
 langchain==0.3.14
 langchain-community==0.3.14
 langchain-core==0.3.29
+langchain-experimental==0.3.4
 
 # AI Models (Google Gemini & Hugging Face API Embeddings)
 langchain-google-genai==2.0.8
 langsmith==0.2.0
 
 # Vector Database
+bm25s==0.3.9
 langchain-pinecone==0.2.0
 
 # Utilities
@@ -24,3 +26,7 @@ uvicorn==0.32.0
 gunicorn==23.0.0
 python-multipart==0.0.12
 pydantic-settings==2.6.0
+
+# Redis / Queue Broker
+redis==5.2.1
+celery[redis]==5.6.2

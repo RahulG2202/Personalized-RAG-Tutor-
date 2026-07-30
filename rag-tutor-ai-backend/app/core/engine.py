@@ -1,4 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -33,7 +34,11 @@ def get_rag_chat():
     )
 
     question_answer_chain = create_stuff_documents_chain(llm, prompt)
-    retriever = vector_db.get_db().as_retriever(
-        search_kwargs={"k": chat_settings.RETRIVAL_K}
+    retriever = RunnableLambda(
+        lambda inputs: vector_db.hybrid_search(
+            inputs["input"],
+            k=chat_settings.RETRIVAL_K,
+            alpha=chat_settings.HYBRID_ALPHA
+        )
     )
     return create_retrieval_chain(retriever, question_answer_chain)

@@ -28,8 +28,9 @@ Set these in your Render service dashboard under **Environment**:
 - `AWS_REGION` - AWS region (default: us-east-1)
 - `AWS_S3_PREFIX` - S3 prefix (default: materials)
 - `HUGGINGFACE_EMBEDDING_API_URL` - Hugging Face router URL (default: `https://router.huggingface.co/hf-inference`)
+- `HYBRID_ALPHA` - Hybrid retrieval weighting. Defaults to `0.5`; higher values favor dense embeddings, lower values favor BM25 sparse matching.
 
-The default embedding configuration returns 384-dimensional vectors, so create or recreate the Pinecone index with dimension `384` before ingestion.
+The default embedding configuration returns 384-dimensional vectors, so create or recreate the Pinecone index with dimension `384` and metric `dotproduct` before ingestion.
 If Render returns HTTP 403 from Hugging Face with "does not have sufficient permissions to call Inference Providers", replace `HUGGINGFACEHUB_API_TOKEN` with a new fine-grained token that has the `Make calls to Inference Providers` permission, then redeploy/restart the service.
 
 ## Deployment Steps
